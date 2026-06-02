@@ -1,6 +1,6 @@
 FROM node:18-slim
 
-# Install necessary dependencies for Puppeteer/Chrome
+# Install dependencies for Puppeteer
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -26,8 +26,11 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     --no-install-recommends
 
-# Create app directory
+# Create app directory with proper permissions
 WORKDIR /app
+
+# Create auth directory with write permissions
+RUN mkdir -p /app/auth && chmod -R 777 /app/auth
 
 # Copy package files
 COPY package*.json ./
@@ -38,8 +41,11 @@ RUN npm install
 # Copy bot code
 COPY bot.js ./
 
-# Run as non-root user for security
-RUN groupadd -r pptruser && useradd -r -g pptruser pptruser
+# Create non-root user and give ownership
+RUN groupadd -r pptruser && useradd -r -g pptruser pptruser && \
+    chown -R pptruser:pptruser /app
+
+# Switch to non-root user
 USER pptruser
 
 # Start the bot
