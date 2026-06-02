@@ -8,16 +8,19 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const MY_PHONE_NUMBER = "254102776096";  // <----- CHANGE THIS!
 
 // ============================================
-// INITIALIZE CLIENT WITH NO-SANDBOX FIX
+// INITIALIZE CLIENT WITH FIXED AUTH PATH
 // ============================================
 const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: "./auth" }),
+    authStrategy: new LocalAuth({ 
+        dataPath: "./auth",           // Now uses /app/auth (writable)
+        clientId: "whatsapp-bot"      // Unique ID for this bot
+    }),
     puppeteer: {
         headless: true,
         args: [
-            '--no-sandbox',              // Required for Railway/Docker
-            '--disable-setuid-sandbox',  // Required for Railway/Docker
-            '--disable-dev-shm-usage',   // Prevents crashes on low memory
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
             '--disable-accelerated-2d-canvas',
             '--disable-gpu'
         ]
@@ -26,7 +29,7 @@ const client = new Client({
     pairWithPhoneNumber: {
         phoneNumber: MY_PHONE_NUMBER,
         showNotification: true,
-        intervalMs: 180000  // New code every 3 minutes
+        intervalMs: 180000
     }
 });
 
@@ -68,8 +71,7 @@ client.on('disconnected', (reason) => {
 // ============================================
 
 // Store warnings for users (in memory, resets on restart)
-// For permanent storage, add a database
-let warnings = new Map(); // Key: "groupId_userId", Value: warning count
+let warnings = new Map();
 
 client.on('message', async (message) => {
     try {
@@ -101,16 +103,6 @@ client.on('message', async (message) => {
         }
         
         // ============================================
-        // OPTIONAL: DELETE ALL LINKS (uncomment to enable)
-        // ============================================
-        // const anyLinkPattern = /(https?:\/\/[^\s]+)/g;
-        // if (anyLinkPattern.test(body)) {
-        //     await message.delete();
-        //     await client.sendMessage(chat.id._serialized, `❌ @${senderName}, links are not allowed!`, { mentions: [sender] });
-        //     return;
-        // }
-        
-        // ============================================
         // COMMANDS (Admins Only)
         // ============================================
         if (!isAdmin) return;
@@ -130,12 +122,11 @@ client.on('message', async (message) => {
                 '`!clearwarn @user` - Clear warnings\n' +
                 '`!settings` - Show bot config\n\n' +
                 '*Auto-Moderation:*\n' +
-                '🔗 WhatsApp invite links are automatically deleted\n\n' +
-                '_Made with ❤️ for your group_'
+                '🔗 WhatsApp invite links are automatically deleted'
             );
         }
         
-        // !tagall - Mention everyone in the group
+        // !tagall - Mention everyone
         else if (lowerBody === '!tagall') {
             let mentions = chat.participants.map(p => p.id._serialized);
             let mentionText = chat.participants.map(p => `@${p.id._serialized.split('@')[0]}`).join(' ');
@@ -147,13 +138,13 @@ client.on('message', async (message) => {
         else if (lowerBody === '!link') {
             try {
                 const inviteCode = await chat.getInviteCode();
-                await message.reply(`🔗 *Group Invite Link*\n\nhttps://chat.whatsapp.com/${inviteCode}\n\n_This link expires when you regenerate it._`);
+                await message.reply(`🔗 *Group Invite Link*\n\nhttps://chat.whatsapp.com/${inviteCode}`);
             } catch (error) {
                 await message.reply(`❌ Failed to get invite link. Make sure I'm an admin.`);
             }
         }
         
-        // !ban @user - Remove user from group
+        // !ban @user - Remove user
         else if (lowerBody.startsWith('!ban ') && message.mentionedIds.length > 0) {
             const target = message.mentionedIds[0];
             const targetName = target.split('@')[0];
@@ -171,7 +162,7 @@ client.on('message', async (message) => {
             }
         }
         
-        // !promote @user - Make user an admin
+        // !promote @user - Make admin
         else if (lowerBody.startsWith('!promote ') && message.mentionedIds.length > 0) {
             const target = message.mentionedIds[0];
             const targetName = target.split('@')[0];
@@ -185,7 +176,7 @@ client.on('message', async (message) => {
             }
         }
         
-        // !demote @user - Remove admin status
+        // !demote @user - Remove admin
         else if (lowerBody.startsWith('!demote ') && message.mentionedIds.length > 0) {
             const target = message.mentionedIds[0];
             const targetName = target.split('@')[0];
@@ -211,8 +202,7 @@ client.on('message', async (message) => {
             
             await message.reply(
                 `⚠️ *WARNING #${currentWarnings}/3* for @${targetName}\n\n` +
-                `Reason: Violating group rules\n\n` +
-                (currentWarnings >= 3 ? `🚫 User will be removed after 3 warnings!` : `_Next warning = removal_`)
+                (currentWarnings >= 3 ? `🚫 User will be removed!` : `_Next warning = removal_`)
             );
             
             console.log(`⚠️ ${senderName} warned ${targetName} (${currentWarnings}/3)`);
@@ -223,20 +213,18 @@ client.on('message', async (message) => {
                     await chat.removeParticipants([target]);
                     await message.reply(`🚫 @${targetName} has been removed for reaching 3 warnings.`);
                     warnings.delete(warningKey);
-                    console.log(`🔨 Auto-banned ${targetName} for 3 warnings`);
                 } catch (error) {
-                    await message.reply(`❌ Failed to remove user after warnings.`);
+                    await message.reply(`❌ Failed to remove user.`);
                 }
             }
         }
         
-        // !warnings @user - Check warnings count
+        // !warnings @user - Check warnings
         else if (lowerBody.startsWith('!warnings ') && message.mentionedIds.length > 0) {
             const target = message.mentionedIds[0];
             const targetName = target.split('@')[0];
             const warningKey = `${chat.id._serialized}_${target}`;
             const currentWarnings = warnings.get(warningKey) || 0;
-            
             await message.reply(`📊 @${targetName} has *${currentWarnings}/3* warnings.`);
         }
         
@@ -245,20 +233,16 @@ client.on('message', async (message) => {
             const target = message.mentionedIds[0];
             const targetName = target.split('@')[0];
             const warningKey = `${chat.id._serialized}_${target}`;
-            
             warnings.delete(warningKey);
             await message.reply(`✅ Warnings cleared for @${targetName}.`);
-            console.log(`🧹 ${senderName} cleared warnings for ${targetName}`);
         }
         
-        // !settings - Show bot configuration
+        // !settings - Show config
         else if (lowerBody === '!settings') {
             await message.reply(
                 '🤖 *BOT SETTINGS*\n\n' +
                 '🔗 Auto-delete invite links: ✅ ACTIVE\n' +
-                '🚫 Auto-delete all links: ❌ DISABLED\n' +
-                '⚠️ Warning limit: 3 warnings = auto-ban\n' +
-                '👑 Admin commands: All admins can use\n\n' +
+                '⚠️ Warning limit: 3 warnings = auto-ban\n\n' +
                 'Type `!menu` for all commands'
             );
         }
